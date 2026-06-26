@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Template for building the Todo Project, its creates the necessary components for the Todo Project Work.
+Resources:
+  #The sqs queue
+  TodoProcessorQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: todo-processor-queue
+  #The DTodo table
+  DTodoTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: DTodo
+      PrimaryKey:
+        Name: id
+        Type: Number
+  #The DUser table
+  DUserTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: DUser
+      PrimaryKey:
+        Name: id
+        Type: Number
+
+  #The TodoGetter lambda
+  TodoGetter:
+    Type: AWS::Serverless::Function
+    Properties:
+      Architectures:
+        - x86_64
+      CodeUri: ./target/TodoServerlessSamProject-1.0-SNAPSHOT.jar
+      Description: 'TodoGetter lambda get the TODO from the todo api and send to sqs for process'
+      Environment:
+        Variables:
+          TODO_API_URL: https://jsonplaceholder.typicode.com/
+          TODO_QUEUE_URL: !Ref TodoProcessorQueue
+      EphemeralStorage:
+        Size: 512
+      Handler: org.carlosacademic.handlers.TodoLambdaGetter::handleRequest
+      LoggingConfig:
+        LogFormat: Text
+        LogGroup: /aws/lambda/TodoGetter
+      MemorySize: 512
+      PackageType: Zip
+      RecursiveLoop: Terminate
+      Runtime: java21
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: Auto
+      SnapStart:
+        ApplyOn: None
+      Tags: {}
+      Timeout: 15
+      Tracing: PassThrough
+      Policies:
+       - SQSSendMessagePolicy:
+           QueueName: !GetAtt TodoProcessorQueue.QueueName
+    Metadata:
+      SkipBuild: True
+  #The TodoRegister lambda
+  TodoRegister:
+    Type: AWS::Serverless::Function
+    Properties:
+      Architectures:
+        - x86_64
+      CodeUri: ./target/TodoServerlessSamProject-1.0-SNAPSHOT.jar
+      Description: 'TodoRegister receive the TODO from the queue and saves the todo and his user into DynamoDB'
+      Environment:
+        Variables:
+          TODO_TABLE_NAME: !Ref DTodoTable
+          USER_TABLE_NAME: !Ref DUserTable
+      EphemeralStorage:
+        Size: 512
+      Handler: org.carlosacademic.handlers.TodoLambdaRegister::handleRequest
+      LoggingConfig:
+        LogFormat: Text
+        LogGroup: /aws/lambda/TodoRegister
+      MemorySize: 512
+      PackageType: Zip
+      RecursiveLoop: Terminate
+      Runtime: java21
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: Auto
+      SnapStart:
+        ApplyOn: None
+      Tags: { }
+      Timeout: 15
+      Tracing: PassThrough
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DTodoTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DUserTable
+      Events:
+        TodoProcessorQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TodoProcessorQueue.Arn
+            BatchSize: 10
+    Metadata:
+      SkipBuild: True
